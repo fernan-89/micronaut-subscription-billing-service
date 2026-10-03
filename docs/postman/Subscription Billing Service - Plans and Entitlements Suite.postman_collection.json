@@ -1,0 +1,2414 @@
+{
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "exec": [
+          "// Automatically generate standard W3C traceparent (ADR-010) and X-Trace-Id",
+          "function generateHex(len) {",
+          "    let result = '';",
+          "    const chars = '0123456789abcdef';",
+          "    for (let i = 0; i < len; i++) {",
+          "        result += chars.charAt(Math.floor(Math.random() * chars.length));",
+          "    }",
+          "    return result;",
+          "}",
+          "const traceId = generateHex(32);",
+          "const spanId = generateHex(16);",
+          "const traceparent = `00-${traceId}-${spanId}-01`;",
+          "pm.request.headers.upsert({ key: 'traceparent', value: traceparent });",
+          "pm.request.headers.upsert({ key: 'X-Trace-Id', value: traceId });",
+          "pm.environment.set('currentTraceId', traceId);"
+        ],
+        "type": "text/javascript"
+      }
+    }
+  ],
+  "info": {
+    "_exporter_id": "39879181",
+    "_postman_id": "d3e5f7a9-1b2c-4d4e-8f6a-8b0c2d4e6f8a",
+    "description": "Enterprise-grade E2E Postman Suite for the Subscription Billing Service Domain (BIAN-aligned, ADR-001/005/013/019/030/031/032). Drafts, edits and activates a Plan, subscribes a tenant (TRIALING), asserts entitlement/evaluate for a limit, an unlimited feature, a feature the plan leaves out, a plan change, a PAST_DUE grace period and a SUSPENDED subscription, walks the Subscription lifecycle (activate, mark-past-due, suspend, cancel) and reads both audit ledgers; negative cases cover validation, the plan lifecycle rules, \"one current subscription per organisation\", plans that are not on sale, tenant isolation and the absence of DELETE, with RFC 7807 error_code assertions. Plans are platform-wide, so every run drafts its own plan codes; subscriptions use their own generated tenant id (billingOrganisationId), so it needs no organisationId from the Party Reference Data Directory.",
+    "name": "Subscription Billing Service - Plans, Subscriptions and Entitlements Suite",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Health status is UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Health Check (Aggregated)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ],
+              "raw": "{{base_url}}/health"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Liveness status is UP or UNKNOWN (no probe contributors registered)', () => pm.expect(['UP', 'UNKNOWN']).to.include(pm.response.json().status));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Liveness Probe",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "liveness"
+              ],
+              "raw": "{{base_url}}/health/liveness"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Readiness status is UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Readiness Probe",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "readiness"
+              ],
+              "raw": "{{base_url}}/health/readiness"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Contains JVM metrics', () => pm.expect(pm.response.text()).to.include('jvm_memory'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Prometheus Metrics",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "prometheus"
+              ],
+              "raw": "{{base_url}}/prometheus"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns Swagger UI HTML', () => pm.expect(pm.response.text()).to.include('swagger-ui'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Swagger UI",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "swagger-ui",
+                "index.html"
+              ],
+              "raw": "{{base_url}}/swagger-ui/index.html"
+            }
+          }
+        }
+      ],
+      "name": "00. Infrastructure & Telemetry"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.environment.set('billingOrganisationId', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.environment.set('planCode', 'PM' + Date.now());",
+                  "pm.environment.set('planCode2', 'PN' + Date.now());"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Drafted with its entitlements', () => {",
+                  "    pm.expect(json.status).to.eql('DRAFT');",
+                  "    pm.expect(json.code).to.eql(pm.environment.get('planCode'));",
+                  "    pm.expect(json.entitlements.assets).to.eql(500);",
+                  "    pm.expect(json.entitlements.sites).to.eql(-1);",
+                  "});",
+                  "pm.environment.set('planId', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "01. Initiate Plan (DRAFT)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{planCode}}\",\n  \"name\": \"Team edition\",\n  \"entitlements\": { \"assets\": 500, \"discovery\": 1, \"sites\": -1, \"sso\": 0 }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Same plan', () => { const json = pm.response.json(); pm.expect(json.id).to.eql(pm.environment.get('planId')); pm.expect(json.status).to.eql('DRAFT'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "02. Retrieve Plan By ID",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "{{planId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/{{planId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "03. Update Plan (DRAFT is editable)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Team edition v2\",\n  \"entitlements\": { \"assets\": 500, \"discovery\": 1, \"sites\": -1, \"sso\": 0, \"reports\": 1 }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "{{planId}}",
+                "update"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/{{planId}}/update"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Contains our draft plan with the edit', () => { const ours = json.find(p => p.id === pm.environment.get('planId')); pm.expect(ours).to.exist; pm.expect(ours.name).to.eql('Team edition v2'); pm.expect(ours.entitlements.reports).to.eql(1); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "04. Retrieve Plans (filter status=DRAFT)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "DRAFT"
+                }
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/retrieve?status=DRAFT"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "05. Control: Activate Plan",
+          "request": {
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "{{planId}}",
+                "control",
+                "activate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/{{planId}}/control/activate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Trialing on the plan', () => { pm.expect(json.status).to.eql('TRIALING'); pm.expect(json.planCode).to.eql(pm.environment.get('planCode')); pm.expect(json.organisationId).to.eql(pm.environment.get('billingOrganisationId')); });",
+                  "pm.environment.set('subscriptionId', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "06. Initiate Subscription (TRIALING)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planCode\": \"{{planCode}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Same subscription', () => pm.expect(pm.response.json().id).to.eql(pm.environment.get('subscriptionId')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "07. Retrieve Subscription By ID",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "{{subscriptionId}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/{{subscriptionId}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('The one we started', () => pm.expect(pm.response.json().id).to.eql(pm.environment.get('subscriptionId')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "08. Retrieve the current Subscription",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "current",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/current/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Allowed up to 500, decided by the subscription', () => { pm.expect(json.allowed).to.be.true; pm.expect(json.limit).to.eql(500); pm.expect(json.source).to.eql('SUBSCRIPTION'); pm.expect(json.planCode).to.eql(pm.environment.get('planCode')); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "09. Evaluate entitlement (a limit from the subscription plan)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "entitlement",
+                "evaluate"
+              ],
+              "query": [
+                {
+                  "key": "feature",
+                  "value": "assets"
+                }
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/entitlement/evaluate?feature=assets"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Unlimited means allowed with no limit', () => { const json = pm.response.json(); pm.expect(json.allowed).to.be.true; pm.expect(json.limit == null).to.be.true; });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "10. Evaluate entitlement (unlimited, and a feature the plan does not include)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "entitlement",
+                "evaluate"
+              ],
+              "query": [
+                {
+                  "key": "feature",
+                  "value": "sites"
+                }
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/entitlement/evaluate?feature=sites"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Not allowed', () => pm.expect(pm.response.json().allowed).to.be.false);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "11. Evaluate entitlement (a feature set to 0 is not included)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "entitlement",
+                "evaluate"
+              ],
+              "query": [
+                {
+                  "key": "feature",
+                  "value": "sso"
+                }
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/entitlement/evaluate?feature=sso"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "12. Control: Activate Subscription",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "{{subscriptionId}}",
+                "control",
+                "activate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/{{subscriptionId}}/control/activate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('planId2', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "13. Initiate second Plan",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{planCode2}}\",\n  \"name\": \"Enterprise edition\",\n  \"entitlements\": { \"assets\": 5000, \"sso\": 1 }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "14. Control: Activate second Plan",
+          "request": {
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "{{planId2}}",
+                "control",
+                "activate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/{{planId2}}/control/activate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "15. Update Subscription plan (plan/update)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planCode\": \"{{planCode2}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "{{subscriptionId}}",
+                "plan",
+                "update"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/{{subscriptionId}}/plan/update"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('SSO is in the Enterprise plan', () => { const json = pm.response.json(); pm.expect(json.allowed).to.be.true; pm.expect(json.planCode).to.eql(pm.environment.get('planCode2')); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "16. Evaluate entitlement (now decided by the new plan)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "entitlement",
+                "evaluate"
+              ],
+              "query": [
+                {
+                  "key": "feature",
+                  "value": "sso"
+                }
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/entitlement/evaluate?feature=sso"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "17. Control: Mark Subscription past due",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "{{subscriptionId}}",
+                "control",
+                "mark-past-due"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/{{subscriptionId}}/control/mark-past-due"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Still allowed', () => pm.expect(pm.response.json().allowed).to.be.true);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "18. Evaluate entitlement (PAST_DUE is a grace period)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "entitlement",
+                "evaluate"
+              ],
+              "query": [
+                {
+                  "key": "feature",
+                  "value": "sso"
+                }
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/entitlement/evaluate?feature=sso"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "19. Control: Suspend Subscription",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "{{subscriptionId}}",
+                "control",
+                "suspend"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/{{subscriptionId}}/control/suspend"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Not allowed, because suspended', () => { pm.expect(json.allowed).to.be.false; pm.expect(json.source).to.eql('SUSPENDED'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "20. Evaluate entitlement (SUSPENDED allows nothing)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "entitlement",
+                "evaluate"
+              ],
+              "query": [
+                {
+                  "key": "feature",
+                  "value": "sso"
+                }
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/entitlement/evaluate?feature=sso"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "21. Control: Re-activate Subscription",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "{{subscriptionId}}",
+                "control",
+                "activate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/{{subscriptionId}}/control/activate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Every act is on the ledger, in order', () => { pm.expect(json.map(e => e.action)).to.eql(['INITIATED', 'STATUS_CHANGED', 'PLAN_CHANGED', 'STATUS_CHANGED', 'STATUS_CHANGED', 'STATUS_CHANGED']); pm.expect(json[0].fromStatus == null).to.be.true; });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "22. Retrieve Subscription audit log",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "{{subscriptionId}}",
+                "audit-log",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/{{subscriptionId}}/audit-log/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Drafted, edited, activated', () => pm.expect(json.map(e => e.action)).to.eql(['INITIATED', 'UPDATED', 'STATUS_CHANGED']));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "23. Retrieve Plan audit log",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "{{planId}}",
+                "audit-log",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/{{planId}}/audit-log/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "24. Control: Cancel Subscription (terminal)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "{{subscriptionId}}",
+                "control",
+                "cancel"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/{{subscriptionId}}/control/cancel"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('The cancelled one is history', () => { const json = pm.response.json(); pm.expect(json).to.have.lengthOf(1); pm.expect(json[0].id).to.eql(pm.environment.get('subscriptionId')); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "25. Retrieve Subscriptions (filter status=CANCELLED)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "retrieve"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "CANCELLED"
+                }
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/retrieve?status=CANCELLED"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Not decided by a subscription', () => pm.expect(['DEFAULT_PLAN', 'UNMANAGED']).to.include(pm.response.json().source));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "26. Evaluate entitlement (without a subscription the default plan, or nothing, stands in)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "entitlement",
+                "evaluate"
+              ],
+              "query": [
+                {
+                  "key": "feature",
+                  "value": "assets"
+                }
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/entitlement/evaluate?feature=assets"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "27. Control: Retire Plan (terminal)",
+          "request": {
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "{{planId}}",
+                "control",
+                "retire"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/{{planId}}/control/retire"
+            }
+          }
+        }
+      ],
+      "name": "01. Plans, Subscriptions & Entitlements (BIAN Behavior Qualifiers)"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "01. Initiate Plan - Missing X-Executor Header (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"NOEXEC\",\n  \"name\": \"n\",\n  \"entitlements\": {}\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-VALIDATION-00400', () => {",
+                  "    pm.expect(json.status).to.eql(400);",
+                  "    pm.expect(json.error_code).to.eql('ERR-VALIDATION-00400');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "02. Initiate Plan - Malformed code (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"not a code\",\n  \"name\": \"n\",\n  \"entitlements\": {}\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-VALIDATION-00400', () => {",
+                  "    pm.expect(json.status).to.eql(400);",
+                  "    pm.expect(json.error_code).to.eql('ERR-VALIDATION-00400');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "03. Initiate Plan - Entitlement limit below -1 (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"BADLIMIT\",\n  \"name\": \"n\",\n  \"entitlements\": { \"assets\": -5 }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-VALIDATION-00400', () => {",
+                  "    pm.expect(json.status).to.eql(400);",
+                  "    pm.expect(json.error_code).to.eql('ERR-VALIDATION-00400');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "04. Initiate Plan - Missing entitlements (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"NOENT\",\n  \"name\": \"n\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SUB-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SUB-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "05. Initiate Plan - Duplicate code (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{planCode}}\",\n  \"name\": \"again\",\n  \"entitlements\": {}\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SUB-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SUB-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "06. Update Plan - An ACTIVE plan cannot be edited (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"x\",\n  \"entitlements\": {}\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "{{planId2}}",
+                "update"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/{{planId2}}/update"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SUB-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SUB-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "07. Control: Activate Plan - An ACTIVE plan is not a DRAFT (409)",
+          "request": {
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "{{planId2}}",
+                "control",
+                "activate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/{{planId2}}/control/activate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SUB-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SUB-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "08. Control: Retire Plan - A RETIRED plan cannot be retired again (409)",
+          "request": {
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "{{planId}}",
+                "control",
+                "retire"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/{{planId}}/control/retire"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SUB-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SUB-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "09. Retrieve Plan - Non-existent UUID (404)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "00000000-0000-0000-0000-000000000000",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/00000000-0000-0000-0000-000000000000/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "10. Retrieve Plan - Malformed UUID Path (400)",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "plan",
+                "not-a-uuid",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/plan/not-a-uuid/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SUB-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SUB-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "11. Initiate Subscription - A RETIRED plan is not on sale (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planCode\": \"{{planCode}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SUB-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SUB-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "12. Initiate Subscription - A plan that does not exist (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planCode\": \"NOSUCHPLAN\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "13. Initiate Subscription - Missing X-Tenant-Id Header (400)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planCode\": \"{{planCode2}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('subscriptionId2', pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "14. Initiate Subscription (allowed again once the previous one was cancelled)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planCode\": \"{{planCode2}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SUB-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SUB-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "15. Initiate Subscription - One current subscription per organisation (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planCode\": \"{{planCode2}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "initiate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/initiate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SUB-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SUB-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "16. Update Subscription plan - To the plan it is already on (409)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planCode\": \"{{planCode2}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "{{subscriptionId2}}",
+                "plan",
+                "update"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/{{subscriptionId2}}/plan/update"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SUB-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SUB-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "17. Control: Mark past due - A TRIALING subscription is not ACTIVE (409)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "{{subscriptionId2}}",
+                "control",
+                "mark-past-due"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/{{subscriptionId2}}/control/mark-past-due"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SUB-00409', () => {",
+                  "    pm.expect(json.status).to.eql(409);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SUB-00409');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "18. Control: Activate - A CANCELLED subscription is terminal (409)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "{{subscriptionId}}",
+                "control",
+                "activate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/{{subscriptionId}}/control/activate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SUB-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SUB-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "19. Retrieve Subscription - Another tenant's subscription answers like a missing one (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "00000000-0000-0000-0000-000000000001"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "{{subscriptionId2}}",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/{{subscriptionId2}}/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SUB-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SUB-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "20. Control: Cancel - Another tenant cannot cancel it (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "00000000-0000-0000-0000-000000000001"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "{{subscriptionId2}}",
+                "control",
+                "cancel"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/{{subscriptionId2}}/control/cancel"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "const json = pm.response.json();",
+                  "pm.test('RFC 7807 error_code is ERR-SUB-00404', () => {",
+                  "    pm.expect(json.status).to.eql(404);",
+                  "    pm.expect(json.error_code).to.eql('ERR-SUB-00404');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "21. Retrieve current Subscription - A tenant with none (404)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "00000000-0000-0000-0000-000000000002"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "current",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/current/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "22. Retrieve Subscription - Malformed UUID Path (400)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "not-a-uuid",
+                "retrieve"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/not-a-uuid/retrieve"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "23. Evaluate entitlement - Missing feature (400)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "entitlement",
+                "evaluate"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/entitlement/evaluate"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Not allowed', () => pm.expect([404, 405]).to.include(pm.response.code));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "24. Delete - There is no DELETE (404 or 405)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              }
+            ],
+            "method": "DELETE",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "{{subscriptionId2}}"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/{{subscriptionId2}}"
+            }
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "25. Control: Cancel the second Subscription (clean up)",
+          "request": {
+            "header": [
+              {
+                "key": "X-Tenant-Id",
+                "value": "{{billingOrganisationId}}"
+              },
+              {
+                "key": "X-Executor",
+                "value": "{{executor}}"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subscription-billing",
+                "v1",
+                "{{subscriptionId2}}",
+                "control",
+                "cancel"
+              ],
+              "raw": "{{base_url}}/subscription-billing/v1/{{subscriptionId2}}/control/cancel"
+            }
+          }
+        }
+      ],
+      "name": "02. Negative Tests & Guarantees"
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8095"
+    }
+  ]
+}
