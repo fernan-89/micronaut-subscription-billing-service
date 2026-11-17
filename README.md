@@ -66,7 +66,7 @@ An organisation has at most one non-cancelled subscription, enforced by a partia
 | Code | HTTP | Meaning |
 |---|---|---|
 | `ERR-SUB-00404` | 404 | Subscription or plan not found (another tenant's subscription answers the same) |
-| `ERR-SUB-00409` | 409 | Illegal lifecycle move, duplicate plan code, organisation already subscribed, or plan not on sale (ADR-019) |
+| `ERR-SUB-00409` | 409 | Illegal lifecycle move, duplicate plan code, organisation already subscribed, plan not on sale (ADR-019), or a change that lost a race with another on the same subscription (ADR-033) |
 | `ERR-VALIDATION-00400` | 400 | Payload/header/identifier validation failure (bad plan code, malformed feature name, limit below -1...) |
 | `ERR-INTERNAL-00500` | 500 | Unexpected technical failure |
 

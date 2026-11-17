@@ -36,8 +36,9 @@ public class ChangeSubscriptionPlanUseCase {
         return subscriptionLookup.owned(id, organisationId)
                 .flatMap(subscription -> planAvailability.requireOnSale(request.planCode())
                         .then(Mono.defer(() -> {
+                            String planBefore = subscription.getPlanCode();
                             AuditEntry entry = subscription.changePlan(request.planCode(), executor);
-                            return subscriptionRepository.updatePlan(id, request.planCode(), entry);
+                            return subscriptionRepository.updatePlan(id, planBefore, request.planCode(), entry);
                         })));
     }
 }

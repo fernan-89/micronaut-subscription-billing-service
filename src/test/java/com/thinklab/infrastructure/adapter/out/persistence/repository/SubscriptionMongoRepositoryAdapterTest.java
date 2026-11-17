@@ -158,7 +158,7 @@ class SubscriptionMongoRepositoryAdapterTest {
         AuditEntry planChanged = subscription.changePlan("ENTERPRISE", "admin");
 
         StepVerifier.create(adapter.updateStatus(id, SubscriptionStatus.ACTIVE, activated)).verifyComplete();
-        StepVerifier.create(adapter.updatePlan(id, "ENTERPRISE", planChanged)).verifyComplete();
+        StepVerifier.create(adapter.updatePlan(id, "TEAM", "ENTERPRISE", planChanged)).verifyComplete();
 
         ArgumentCaptor<Bson> updates = ArgumentCaptor.forClass(Bson.class);
         verify(collection, times(2)).updateOne(any(Bson.class), updates.capture());
@@ -172,12 +172,34 @@ class SubscriptionMongoRepositoryAdapterTest {
     }
 
     @Test
-    @DisplayName("every partial update fails with SubscriptionNotFoundException when no document matches")
+    @DisplayName("every write is guarded on what was read; a miss is a 404 when the subscription does not exist and a conflict when it does")
     void updatesFailWhenNothingMatches() {
         when(collection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(Mono.just(UpdateResult.acknowledged(0, 0L, null)));
         AuditEntry entry = subscription.activate("admin");
 
+        when(collection.countDocuments(any(Bson.class))).thenReturn(Mono.just(0L));
         StepVerifier.create(adapter.updateStatus(id, SubscriptionStatus.ACTIVE, entry)).expectError(SubscriptionNotFoundException.class).verify();
-        StepVerifier.create(adapter.updatePlan(id, "X", entry)).expectError(SubscriptionNotFoundException.class).verify();
+        StepVerifier.create(adapter.updatePlan(id, "TEAM", "X", entry)).expectError(SubscriptionNotFoundException.class).verify();
+
+        when(collection.countDocuments(any(Bson.class))).thenReturn(Mono.just(1L));
+        StepVerifier.create(adapter.updateStatus(id, SubscriptionStatus.ACTIVE, entry)).expectError(com.thinklab.domain.exception.InvalidSubscriptionStatusException.class).verify();
+        StepVerifier.create(adapter.updatePlan(id, "TEAM", "X", entry)).expectError(com.thinklab.domain.exception.InvalidSubscriptionStatusException.class).verify();
+    }
+
+    @Test
+    @DisplayName("the guard names the status that was read (and the plan, for a plan change)")
+    void guardsNameWhatWasRead() {
+        when(collection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(Mono.just(UpdateResult.acknowledged(1, 1L, null)));
+        AuditEntry activated = subscription.activate("admin");
+
+        StepVerifier.create(adapter.updateStatus(id, SubscriptionStatus.ACTIVE, activated)).verifyComplete();
+        StepVerifier.create(adapter.updatePlan(id, "TEAM", "ENTERPRISE", activated)).verifyComplete();
+
+        ArgumentCaptor<Bson> filters = ArgumentCaptor.forClass(Bson.class);
+        verify(collection, times(2)).updateOne(filters.capture(), any(Bson.class));
+        String status = render(filters.getAllValues().get(0)).toJson();
+        String plan = render(filters.getAllValues().get(1)).toJson();
+        assertTrue(status.contains("status") && status.contains("TRIALING"), status);
+        assertTrue(plan.contains("planCode") && plan.contains("TEAM") && plan.contains("status"), plan);
     }
 }

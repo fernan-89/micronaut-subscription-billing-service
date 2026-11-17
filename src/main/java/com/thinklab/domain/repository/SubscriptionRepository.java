@@ -27,5 +27,6 @@ public interface SubscriptionRepository {
 
     Mono<Void> updateStatus(UUID id, SubscriptionStatus status, AuditEntry auditEntry);
 
-    Mono<Void> updatePlan(UUID id, String planCode, AuditEntry auditEntry);
+    /** Guarded writes: apply only if the subscription still has the status (and, for the plan, the plan) the caller read; a miss is 409, or 404 when it does not exist. */
+    Mono<Void> updatePlan(UUID id, String expectedPlanCode, String planCode, AuditEntry auditEntry);
 }

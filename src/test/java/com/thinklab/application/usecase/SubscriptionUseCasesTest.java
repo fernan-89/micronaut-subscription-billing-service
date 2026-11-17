@@ -131,11 +131,11 @@ class SubscriptionUseCasesTest {
         ChangeSubscriptionPlanUseCase useCase = new ChangeSubscriptionPlanUseCase(lookup, subscriptionRepository, availability);
         when(subscriptionRepository.findById(id)).thenReturn(Mono.just(subscription(SubscriptionStatus.ACTIVE, "TEAM")));
         when(planRepository.findByCode("ENTERPRISE")).thenReturn(Mono.just(plan("ENTERPRISE", PlanStatus.ACTIVE)));
-        when(subscriptionRepository.updatePlan(eq(id), eq("ENTERPRISE"), any(AuditEntry.class))).thenReturn(Mono.empty());
+        when(subscriptionRepository.updatePlan(eq(id), eq("TEAM"), eq("ENTERPRISE"), any(AuditEntry.class))).thenReturn(Mono.empty());
 
         StepVerifier.create(useCase.execute(id, org, new SubscriptionPlanRequest("ENTERPRISE"), EXECUTOR)).verifyComplete();
 
-        verify(subscriptionRepository).updatePlan(eq(id), eq("ENTERPRISE"), any(AuditEntry.class));
+        verify(subscriptionRepository).updatePlan(eq(id), eq("TEAM"), eq("ENTERPRISE"), any(AuditEntry.class));
     }
 
     @Test
@@ -156,7 +156,7 @@ class SubscriptionUseCasesTest {
         when(planRepository.findByCode("ENTERPRISE")).thenReturn(Mono.just(plan("ENTERPRISE", PlanStatus.ACTIVE)));
         StepVerifier.create(useCase.execute(id, org, new SubscriptionPlanRequest("ENTERPRISE"), EXECUTOR)).expectError(InvalidSubscriptionStatusException.class).verify();
 
-        verify(subscriptionRepository, never()).updatePlan(any(), any(), any());
+        verify(subscriptionRepository, never()).updatePlan(any(), any(), any(), any());
     }
 
     @Test

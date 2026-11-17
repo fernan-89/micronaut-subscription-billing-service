@@ -6,6 +6,7 @@ import com.mongodb.client.model.Updates;
 import com.mongodb.reactivestreams.client.MongoClient;
 import com.mongodb.reactivestreams.client.MongoCollection;
 import com.thinklab.domain.exception.DuplicateSubscriptionException;
+import com.thinklab.domain.exception.InvalidSubscriptionStatusException;
 import com.thinklab.domain.exception.SubscriptionNotFoundException;
 import com.thinklab.domain.model.AuditEntry;
 import com.thinklab.domain.model.Subscription;
@@ -76,22 +77,34 @@ public class SubscriptionMongoRepositoryAdapter implements SubscriptionRepositor
 
     @Override
     public Mono<Void> updateStatus(UUID id, SubscriptionStatus status, AuditEntry auditEntry) {
-        return executeUpdate(id, Updates.combine(
+        // Guarded write (platform race audit): only if the subscription still has the status the caller read, the fromStatus of the entry.
+        return executeGuardedUpdate(id, Filters.eq("status", auditEntry.fromStatus()), Updates.combine(
                 Updates.set("status", status.name()),
                 Updates.set("updatedAt", Instant.now()),
                 Updates.push("auditTrail", AuditEntryDocument.fromDomain(auditEntry))));
     }
 
     @Override
-    public Mono<Void> updatePlan(UUID id, String planCode, AuditEntry auditEntry) {
-        return executeUpdate(id, Updates.combine(
+    public Mono<Void> updatePlan(UUID id, String expectedPlanCode, String planCode, AuditEntry auditEntry) {
+        // Guarded on the plan and the status that were read: two changes made from the same plan cannot both be applied.
+        return executeGuardedUpdate(id, Filters.and(Filters.eq("planCode", expectedPlanCode), Filters.eq("status", auditEntry.fromStatus())), Updates.combine(
                 Updates.set("planCode", planCode),
                 Updates.set("updatedAt", Instant.now()),
                 Updates.push("auditTrail", AuditEntryDocument.fromDomain(auditEntry))));
     }
 
-    private Mono<Void> executeUpdate(UUID id, Bson update) {
-        return Mono.from(collection().updateOne(Filters.eq("_id", id), update))
-                .flatMap(result -> result.getMatchedCount() == 0 ? Mono.error(new SubscriptionNotFoundException(id)) : Mono.empty());
+    /** No match is a 404 when the subscription does not exist and a conflict when it does (someone else changed it since it was read). */
+    private Mono<Void> executeGuardedUpdate(UUID id, Bson guard, Bson update) {
+        return Mono.from(collection().updateOne(Filters.and(Filters.eq("_id", id), guard), update))
+                .flatMap(result -> {
+                    if (result.getMatchedCount() > 0) {
+                        return Mono.<Void>empty();
+                    }
+                    return Mono.from(collection().countDocuments(Filters.eq("_id", id)))
+                            .flatMap(count -> count == 0
+                                    ? Mono.<Void>error(new SubscriptionNotFoundException(id))
+                                    : Mono.<Void>error(new InvalidSubscriptionStatusException(
+                                            "The subscription was changed by someone else while this change was being recorded; read it again and retry.")));
+                });
     }
 }
