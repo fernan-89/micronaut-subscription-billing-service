@@ -57,8 +57,8 @@ public class SubscriptionMongoRepositoryAdapter implements SubscriptionRepositor
     }
 
     @Override
-    public Mono<Subscription> findById(UUID id) {
-        return Mono.from(collection().find(Filters.eq("_id", id)).first()).map(SubscriptionPersistenceMapper::toDomain);
+    public Mono<Subscription> findById(UUID id, UUID organisationId) {
+        return Mono.from(collection().find(Filters.and(Filters.eq("_id", id), Filters.eq("organisationId", organisationId))).first()).map(SubscriptionPersistenceMapper::toDomain);
     }
 
     @Override

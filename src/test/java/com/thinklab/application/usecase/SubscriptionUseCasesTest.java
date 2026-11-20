@@ -46,6 +46,7 @@ class SubscriptionUseCasesTest {
 
     private final UUID id = UUID.randomUUID();
     private final UUID org = UUID.randomUUID();
+    private final UUID foreign = UUID.randomUUID();
     private SubscriptionLookup lookup;
     private PlanAvailability availability;
 
@@ -82,11 +83,12 @@ class SubscriptionUseCasesTest {
     @Test
     @DisplayName("SubscriptionLookup answers a foreign tenant's subscription exactly like a missing one")
     void lookup() {
-        when(subscriptionRepository.findById(id)).thenReturn(Mono.just(subscription(SubscriptionStatus.ACTIVE, "TEAM")));
+        when(subscriptionRepository.findById(id, org)).thenReturn(Mono.just(subscription(SubscriptionStatus.ACTIVE, "TEAM")));
+        when(subscriptionRepository.findById(id, foreign)).thenReturn(Mono.empty());
 
         StepVerifier.create(lookup.owned(id, org)).expectNextCount(1).verifyComplete();
-        StepVerifier.create(lookup.owned(id, UUID.randomUUID())).expectError(SubscriptionNotFoundException.class).verify();
-        when(subscriptionRepository.findById(id)).thenReturn(Mono.empty());
+        StepVerifier.create(lookup.owned(id, foreign)).expectError(SubscriptionNotFoundException.class).verify();
+        when(subscriptionRepository.findById(id, org)).thenReturn(Mono.empty());
         StepVerifier.create(lookup.owned(id, org)).expectError(SubscriptionNotFoundException.class).verify();
     }
 
@@ -129,7 +131,7 @@ class SubscriptionUseCasesTest {
     @DisplayName("changing plan persists the new plan code with the PLAN_CHANGED entry")
     void changePlan() {
         ChangeSubscriptionPlanUseCase useCase = new ChangeSubscriptionPlanUseCase(lookup, subscriptionRepository, availability);
-        when(subscriptionRepository.findById(id)).thenReturn(Mono.just(subscription(SubscriptionStatus.ACTIVE, "TEAM")));
+        when(subscriptionRepository.findById(id, org)).thenReturn(Mono.just(subscription(SubscriptionStatus.ACTIVE, "TEAM")));
         when(planRepository.findByCode("ENTERPRISE")).thenReturn(Mono.just(plan("ENTERPRISE", PlanStatus.ACTIVE)));
         when(subscriptionRepository.updatePlan(eq(id), eq("TEAM"), eq("ENTERPRISE"), any(AuditEntry.class))).thenReturn(Mono.empty());
 
@@ -142,8 +144,9 @@ class SubscriptionUseCasesTest {
     @DisplayName("changing plan is refused for a foreign tenant, an unavailable plan, a cancelled subscription and the same plan, never writing")
     void changePlanRefusals() {
         ChangeSubscriptionPlanUseCase useCase = new ChangeSubscriptionPlanUseCase(lookup, subscriptionRepository, availability);
-        when(subscriptionRepository.findById(id)).thenReturn(Mono.just(subscription(SubscriptionStatus.ACTIVE, "TEAM")));
-        StepVerifier.create(useCase.execute(id, UUID.randomUUID(), new SubscriptionPlanRequest("ENTERPRISE"), EXECUTOR))
+        when(subscriptionRepository.findById(id, org)).thenReturn(Mono.just(subscription(SubscriptionStatus.ACTIVE, "TEAM")));
+        when(subscriptionRepository.findById(id, foreign)).thenReturn(Mono.empty());
+        StepVerifier.create(useCase.execute(id, foreign, new SubscriptionPlanRequest("ENTERPRISE"), EXECUTOR))
                 .expectError(SubscriptionNotFoundException.class).verify();
 
         when(planRepository.findByCode("OLD")).thenReturn(Mono.just(plan("OLD", PlanStatus.RETIRED)));
@@ -152,7 +155,7 @@ class SubscriptionUseCasesTest {
         when(planRepository.findByCode("TEAM")).thenReturn(Mono.just(plan("TEAM", PlanStatus.ACTIVE)));
         StepVerifier.create(useCase.execute(id, org, new SubscriptionPlanRequest("TEAM"), EXECUTOR)).expectError(InvalidSubscriptionStatusException.class).verify();
 
-        when(subscriptionRepository.findById(id)).thenReturn(Mono.just(subscription(SubscriptionStatus.CANCELLED, "TEAM")));
+        when(subscriptionRepository.findById(id, org)).thenReturn(Mono.just(subscription(SubscriptionStatus.CANCELLED, "TEAM")));
         when(planRepository.findByCode("ENTERPRISE")).thenReturn(Mono.just(plan("ENTERPRISE", PlanStatus.ACTIVE)));
         StepVerifier.create(useCase.execute(id, org, new SubscriptionPlanRequest("ENTERPRISE"), EXECUTOR)).expectError(InvalidSubscriptionStatusException.class).verify();
 
@@ -165,19 +168,19 @@ class SubscriptionUseCasesTest {
         ControlSubscriptionUseCase useCase = new ControlSubscriptionUseCase(lookup, subscriptionRepository);
         when(subscriptionRepository.updateStatus(eq(id), any(SubscriptionStatus.class), any(AuditEntry.class))).thenReturn(Mono.empty());
 
-        when(subscriptionRepository.findById(id)).thenReturn(Mono.just(subscription(SubscriptionStatus.TRIALING, "TEAM")));
+        when(subscriptionRepository.findById(id, org)).thenReturn(Mono.just(subscription(SubscriptionStatus.TRIALING, "TEAM")));
         StepVerifier.create(useCase.execute(id, org, ControlSubscriptionUseCase.Action.ACTIVATE, EXECUTOR)).verifyComplete();
         verify(subscriptionRepository).updateStatus(eq(id), eq(SubscriptionStatus.ACTIVE), any(AuditEntry.class));
 
-        when(subscriptionRepository.findById(id)).thenReturn(Mono.just(subscription(SubscriptionStatus.ACTIVE, "TEAM")));
+        when(subscriptionRepository.findById(id, org)).thenReturn(Mono.just(subscription(SubscriptionStatus.ACTIVE, "TEAM")));
         StepVerifier.create(useCase.execute(id, org, ControlSubscriptionUseCase.Action.MARK_PAST_DUE, EXECUTOR)).verifyComplete();
         verify(subscriptionRepository).updateStatus(eq(id), eq(SubscriptionStatus.PAST_DUE), any(AuditEntry.class));
 
-        when(subscriptionRepository.findById(id)).thenReturn(Mono.just(subscription(SubscriptionStatus.ACTIVE, "TEAM")));
+        when(subscriptionRepository.findById(id, org)).thenReturn(Mono.just(subscription(SubscriptionStatus.ACTIVE, "TEAM")));
         StepVerifier.create(useCase.execute(id, org, ControlSubscriptionUseCase.Action.SUSPEND, EXECUTOR)).verifyComplete();
         verify(subscriptionRepository).updateStatus(eq(id), eq(SubscriptionStatus.SUSPENDED), any(AuditEntry.class));
 
-        when(subscriptionRepository.findById(id)).thenReturn(Mono.just(subscription(SubscriptionStatus.ACTIVE, "TEAM")));
+        when(subscriptionRepository.findById(id, org)).thenReturn(Mono.just(subscription(SubscriptionStatus.ACTIVE, "TEAM")));
         StepVerifier.create(useCase.execute(id, org, ControlSubscriptionUseCase.Action.CANCEL, EXECUTOR)).verifyComplete();
         verify(subscriptionRepository).updateStatus(eq(id), eq(SubscriptionStatus.CANCELLED), any(AuditEntry.class));
     }
@@ -186,9 +189,10 @@ class SubscriptionUseCasesTest {
     @DisplayName("control is refused for a foreign tenant and for an illegal move, never writing")
     void controlRefusals() {
         ControlSubscriptionUseCase useCase = new ControlSubscriptionUseCase(lookup, subscriptionRepository);
-        when(subscriptionRepository.findById(id)).thenReturn(Mono.just(subscription(SubscriptionStatus.CANCELLED, "TEAM")));
+        when(subscriptionRepository.findById(id, org)).thenReturn(Mono.just(subscription(SubscriptionStatus.CANCELLED, "TEAM")));
+        when(subscriptionRepository.findById(id, foreign)).thenReturn(Mono.empty());
 
-        StepVerifier.create(useCase.execute(id, UUID.randomUUID(), ControlSubscriptionUseCase.Action.ACTIVATE, EXECUTOR))
+        StepVerifier.create(useCase.execute(id, foreign, ControlSubscriptionUseCase.Action.ACTIVATE, EXECUTOR))
                 .expectError(SubscriptionNotFoundException.class).verify();
         StepVerifier.create(useCase.execute(id, org, ControlSubscriptionUseCase.Action.ACTIVATE, EXECUTOR))
                 .expectError(InvalidSubscriptionStatusException.class).verify();
@@ -200,18 +204,19 @@ class SubscriptionUseCasesTest {
     void retrieve() {
         RetrieveSubscriptionUseCase useCase = new RetrieveSubscriptionUseCase(lookup, subscriptionRepository);
         Subscription active = subscription(SubscriptionStatus.ACTIVE, "TEAM");
-        when(subscriptionRepository.findById(id)).thenReturn(Mono.just(active));
+        when(subscriptionRepository.findById(id, org)).thenReturn(Mono.just(active));
+        when(subscriptionRepository.findById(id, foreign)).thenReturn(Mono.empty());
         when(subscriptionRepository.findAllByOrganisationId(org, null)).thenReturn(Flux.just(active));
         when(subscriptionRepository.findAllByOrganisationId(org, SubscriptionStatus.CANCELLED)).thenReturn(Flux.empty());
         when(subscriptionRepository.findCurrentByOrganisationId(org)).thenReturn(Mono.just(active));
 
         StepVerifier.create(useCase.byId(id, org)).assertNext(r -> assertEquals("TEAM", r.planCode())).verifyComplete();
-        StepVerifier.create(useCase.byId(id, UUID.randomUUID())).expectError(SubscriptionNotFoundException.class).verify();
+        StepVerifier.create(useCase.byId(id, foreign)).expectError(SubscriptionNotFoundException.class).verify();
         StepVerifier.create(useCase.all(org, null)).expectNextCount(1).verifyComplete();
         StepVerifier.create(useCase.all(org, SubscriptionStatus.CANCELLED)).verifyComplete();
         StepVerifier.create(useCase.current(org)).assertNext(r -> assertEquals("ACTIVE", r.status())).verifyComplete();
         StepVerifier.create(useCase.auditLog(id, org)).assertNext(log -> assertTrue(log.isEmpty())).verifyComplete();
-        StepVerifier.create(useCase.auditLog(id, UUID.randomUUID())).expectError(SubscriptionNotFoundException.class).verify();
+        StepVerifier.create(useCase.auditLog(id, foreign)).expectError(SubscriptionNotFoundException.class).verify();
 
         when(subscriptionRepository.findCurrentByOrganisationId(org)).thenReturn(Mono.empty());
         StepVerifier.create(useCase.current(org)).expectError(SubscriptionNotFoundException.class).verify();

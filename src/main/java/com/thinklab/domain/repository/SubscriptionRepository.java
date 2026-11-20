@@ -17,7 +17,7 @@ public interface SubscriptionRepository {
     /** Fails with {@code DuplicateSubscriptionException} when the organisation already has a non-cancelled subscription. */
     Mono<Subscription> create(Subscription subscription);
 
-    Mono<Subscription> findById(UUID id);
+    Mono<Subscription> findById(UUID id, UUID organisationId);
 
     /** The organisation's one non-cancelled subscription, if any. */
     Mono<Subscription> findCurrentByOrganisationId(UUID organisationId);

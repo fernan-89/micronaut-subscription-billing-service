@@ -115,9 +115,9 @@ class SubscriptionMongoRepositoryAdapterTest {
                 .thenReturn(Mono.just(SubscriptionPersistenceMapper.toDocument(subscription)))
                 .thenReturn(Mono.empty()).thenReturn(Mono.empty());
 
-        StepVerifier.create(adapter.findById(id)).expectNextMatches(s -> s.getPlanCode().equals("TEAM")).verifyComplete();
+        StepVerifier.create(adapter.findById(id, UUID.randomUUID())).expectNextMatches(s -> s.getPlanCode().equals("TEAM")).verifyComplete();
         StepVerifier.create(adapter.findCurrentByOrganisationId(tenant)).expectNextMatches(s -> s.getId().equals(id)).verifyComplete();
-        StepVerifier.create(adapter.findById(id)).verifyComplete();
+        StepVerifier.create(adapter.findById(id, UUID.randomUUID())).verifyComplete();
         StepVerifier.create(adapter.findCurrentByOrganisationId(tenant)).verifyComplete();
 
         ArgumentCaptor<Bson> filters = ArgumentCaptor.forClass(Bson.class);
