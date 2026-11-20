@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -176,7 +177,8 @@ class BillingPersistenceIT implements TestPropertyProvider {
         assertEquals("TRIALING", log.get(1).fromStatus());
         assertEquals("ACTIVE", log.get(1).toStatus());
 
-        Subscription stored = subscriptions.findById(subscription.id()).block();
+        Subscription stored = subscriptions.findById(subscription.id(), subscription.organisationId()).block();
+        assertNull(subscriptions.findById(subscription.id(), UUID.randomUUID()).block(), "another tenant's subscription is the same as none");
         assertTrue(stored.isCurrent());
         assertThrows(com.thinklab.domain.exception.SubscriptionNotFoundException.class,
                 () -> retrieveSubscription.byId(subscription.id(), UUID.randomUUID()).block());

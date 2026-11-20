@@ -22,8 +22,7 @@ public class SubscriptionLookup {
     }
 
     public Mono<Subscription> owned(UUID id, UUID organisationId) {
-        return subscriptionRepository.findById(id)
-                .filter(subscription -> subscription.getOrganisationId().equals(organisationId))
+        return subscriptionRepository.findById(id, organisationId)
                 .switchIfEmpty(Mono.error(new SubscriptionNotFoundException(id)));
     }
 }
